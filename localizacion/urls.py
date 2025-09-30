@@ -1,7 +1,7 @@
 from django.urls import path
-from .views import mapa_view
+from .views import mapa_view, index_redirect
 
 urlpatterns = [
-    path('', mapa_view, name='index'),  # Esta línea hace que / muestre el mapa
+    path('', index_redirect, name='index'),  # Redirige / a /mapa/
     path('mapa/', mapa_view, name='mapa'),
 ]

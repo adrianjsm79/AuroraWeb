@@ -1,4 +1,7 @@
-from django.shortcuts import render
+from django.shortcuts import render, redirect
+
+def index_redirect(request):
+    return redirect('mapa')
 
 def mapa_view(request):
     # Valores por defecto (ejemplo: Lima)
@@ -17,3 +20,5 @@ def mapa_view(request):
         'lng': lng
     }
     return render(request, 'mapa.html', context)
+
+
