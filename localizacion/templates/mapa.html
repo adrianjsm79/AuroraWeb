@@ -21,76 +21,100 @@
     <button type="submit">Actualizar ubicación</button>
   </form>
 
-  <script>
-    var fixedLat = {{ lat }};
-    var fixedLng = {{ lng }};
+<script>
+  var fixedLat = {{ lat }};
+  var fixedLng = {{ lng }};
 
-    var map = L.map('map').setView([fixedLat, fixedLng], 14);
+  var map = L.map('map').setView([fixedLat, fixedLng], 14);
 
-    // Tiles OSM
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
-    }).addTo(map);
+  // Tiles OSM
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors'
+  }).addTo(map);
 
-    // Marcador de la ubicación fija
-    var fixedMarker = L.marker([fixedLat, fixedLng], {draggable: false}).addTo(map)
-      .bindPopup("Ubicación fija")
-      .openPopup();
+  // Marcador de la ubicación fija
+  var fixedMarker = L.marker([fixedLat, fixedLng], {draggable: false}).addTo(map)
+    .bindPopup("Ubicación fija")
+    .openPopup();
 
-    // Evento click en el mapa -> mover marcador y actualizar form
-    map.on('click', function(e) {
-      fixedLat = e.latlng.lat;
-      fixedLng = e.latlng.lng;
-      fixedMarker.setLatLng(e.latlng);
-      document.getElementById("lat").value = fixedLat.toFixed(6);
-      document.getElementById("lng").value = fixedLng.toFixed(6);
-    });
+  // Evento click en el mapa -> mover marcador y actualizar form
+  map.on('click', function(e) {
+    fixedLat = e.latlng.lat;
+    fixedLng = e.latlng.lng;
+    fixedMarker.setLatLng(e.latlng);
+    document.getElementById("lat").value = fixedLat.toFixed(6);
+    document.getElementById("lng").value = fixedLng.toFixed(6);
+  });
 
-    // Función distancia Haversine
-    function calcularDistancia(lat1, lon1, lat2, lon2) {
-      const R = 6371;
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLon = (lon2 - lon1) * Math.PI / 180;
-      const a =
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
-    }
+  // Función distancia Haversine (si quieres usarla luego)
+  function calcularDistancia(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a =
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
+      Math.sin(dLon/2) * Math.sin(dLon/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }
 
-    // Ubicación actual del usuario + ruta OSRM
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(function(pos) {
-        var userLat = pos.coords.latitude;
-        var userLng = pos.coords.longitude;
+  // -------- Ubicación en tiempo real --------
+  var userMarker = null;
+  var rutaLayer = null;
 
-        L.marker([userLat, userLng]).addTo(map).bindPopup("Tu ubicación actual");
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition(function(pos) {
+      var userLat = pos.coords.latitude;
+      var userLng = pos.coords.longitude;
 
-        // Petición a OSRM
-        var url = `https://router.project-osrm.org/route/v1/driving/${userLng},${userLat};${fixedLng},${fixedLat}?overview=full&geometries=geojson`;
+      // Actualizar o crear marcador del usuario
+      if (userMarker) {
+        userMarker.setLatLng([userLat, userLng]);
+      } else {
+        userMarker = L.marker([userLat, userLng], {color: 'red'})
+          .addTo(map)
+          .bindPopup("Tu ubicación actual");
+      }
 
-        fetch(url)
-          .then(res => res.json())
-          .then(data => {
+      // Petición a OSRM para ruta actualizada
+      var url = `https://router.project-osrm.org/route/v1/driving/${userLng},${userLat};${fixedLng},${fixedLat}?overview=full&geometries=geojson`;
+
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          if (data.routes && data.routes.length > 0) {
             var route = data.routes[0].geometry;
-            var distancia = (data.routes[0].distance / 1000).toFixed(2); // en km
+            var distancia = (data.routes[0].distance / 1000).toFixed(2);
 
-            // Dibujar la ruta
-            var rutaLayer = L.geoJSON(route, {
-              style: { color: 'blue', weight: 8, opacity: 0.7 }
+            // Eliminar ruta anterior si existe
+            if (rutaLayer) {
+              map.removeLayer(rutaLayer);
+            }
+
+            // Dibujar nueva ruta
+            rutaLayer = L.geoJSON(route, {
+              style: { color: 'blue', weight: 6, opacity: 0.7 }
             }).addTo(map);
 
-            // Tooltip al pasar el cursor con la distancia
+            // Tooltip con distancia
             rutaLayer.bindTooltip("Distancia: " + distancia + " km", {
               sticky: true
             });
 
-            // Ajustar vista
+            // Ajustar vista a la ruta
             map.fitBounds(rutaLayer.getBounds());
-          });
-      });
-    }
-  </script>
+          }
+        });
+    }, function(error) {
+      console.error("Error al obtener ubicación en tiempo real:", error);
+    }, {
+      enableHighAccuracy: true,
+      maximumAge: 0,
+      timeout: 5000
+    });
+  }
+</script>
+
 </body>
 </html>

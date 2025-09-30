@@ -5,8 +5,8 @@ def index_redirect(request):
 
 def mapa_view(request):
     # Valores por defecto (ejemplo: Lima)
-    lat = -12.0464
-    lng = -77.0428
+    lat = -8.124560
+    lng = -79.038777
 
     if request.method == "POST":
         try:
