@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-+5nrkc)@($(g6wos23nd8w)snc1(oz=5bu8wsx**-8pi@&-jp0
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['Auroraweb.onrender.com']
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
