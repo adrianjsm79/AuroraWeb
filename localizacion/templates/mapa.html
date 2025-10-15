@@ -1,16 +1,15 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Mapa</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <title>Mapa con Google Maps</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <style>
     #map { height: 500px; width: 100%; margin-bottom: 20px; }
   </style>
 </head>
-<body>
-  <h2>Selecciona ubicación fija en el mapa</h2>
+<body class="p-3">
+  <h2 class="mb-3">Selecciona ubicación fija en el mapa</h2>
 
   <div id="map"></div>
 
@@ -18,103 +17,110 @@
     {% csrf_token %}
     lng: <input type="text" id="lng" name="lng" value="{{ lng }}"><br>
     lat: <input type="text" id="lat" name="lat" value="{{ lat }}"><br>
-    <button type="submit">Actualizar ubicación</button>
+    <button type="submit" class="btn btn-primary mt-2">Actualizar ubicación</button>
   </form>
 
-<script>
-  var fixedLat = {{ lat }};
-  var fixedLng = {{ lng }};
+  <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBcpuX1pktDQvVKJCah-8QbqI_ovRoVlmY&libraries=geometry"></script>
+  <script>
+    let map, fixedMarker, userMarker, directionsService, directionsRenderer;
 
-  var map = L.map('map').setView([fixedLat, fixedLng], 14);
+    function initMap() {
+      const fixedLat = parseFloat("{{ lat }}");
+      const fixedLng = parseFloat("{{ lng }}");
+      const fixedPos = { lat: fixedLat, lng: fixedLng };
 
-  // Tiles OSM
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors'
-  }).addTo(map);
+      map = new google.maps.Map(document.getElementById("map"), {
+        center: fixedPos,
+        zoom: 14,
+      });
 
-  // Marcador de la ubicación fija
-  var fixedMarker = L.marker([fixedLat, fixedLng], {draggable: false}).addTo(map)
-    .bindPopup("Ubicación fija")
-    .openPopup();
+      directionsService = new google.maps.DirectionsService();
+      directionsRenderer = new google.maps.DirectionsRenderer({ map: map });
 
-  // Evento click en el mapa -> mover marcador y actualizar form
-  map.on('click', function(e) {
-    fixedLat = e.latlng.lat;
-    fixedLng = e.latlng.lng;
-    fixedMarker.setLatLng(e.latlng);
-    document.getElementById("lat").value = fixedLat.toFixed(6);
-    document.getElementById("lng").value = fixedLng.toFixed(6);
-  });
+      // Marcador fijo (editable)
+      fixedMarker = new google.maps.Marker({
+        position: fixedPos,
+        map: map,
+        draggable: true,
+        title: "Ubicación fija"
+      });
 
-  // Función distancia Haversine (si quieres usarla luego)
-  function calcularDistancia(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a =
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) *
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  }
+      fixedMarker.addListener("dragend", (e) => {
+        const lat = e.latLng.lat().toFixed(6);
+        const lng = e.latLng.lng().toFixed(6);
+        document.getElementById("lat").value = lat;
+        document.getElementById("lng").value = lng;
+        calcularRuta();
+      });
 
-  // -------- Ubicación en tiempo real --------
-  var userMarker = null;
-  var rutaLayer = null;
+      // Click en mapa para mover marcador fijo
+      map.addListener("click", (e) => {
+        const lat = e.latLng.lat().toFixed(6);
+        const lng = e.latLng.lng().toFixed(6);
+        fixedMarker.setPosition(e.latLng);
+        document.getElementById("lat").value = lat;
+        document.getElementById("lng").value = lng;
+        calcularRuta();
+      });
 
-  if (navigator.geolocation) {
-    navigator.geolocation.watchPosition(function(pos) {
-      var userLat = pos.coords.latitude;
-      var userLng = pos.coords.longitude;
+      // Obtener ubicación actual del usuario
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            const userPos = {
+              lat: pos.coords.latitude,
+              lng: pos.coords.longitude,
+            };
 
-      // Actualizar o crear marcador del usuario
-      if (userMarker) {
-        userMarker.setLatLng([userLat, userLng]);
-      } else {
-        userMarker = L.marker([userLat, userLng], {color: 'red'})
-          .addTo(map)
-          .bindPopup("Tu ubicación actual");
-      }
-
-      // Petición a OSRM para ruta actualizada
-      var url = `https://router.project-osrm.org/route/v1/driving/${userLng},${userLat};${fixedLng},${fixedLat}?overview=full&geometries=geojson`;
-
-      fetch(url)
-        .then(res => res.json())
-        .then(data => {
-          if (data.routes && data.routes.length > 0) {
-            var route = data.routes[0].geometry;
-            var distancia = (data.routes[0].distance / 1000).toFixed(2);
-
-            // Eliminar ruta anterior si existe
-            if (rutaLayer) {
-              map.removeLayer(rutaLayer);
+            if (userMarker) {
+              userMarker.setPosition(userPos);
+            } else {
+              userMarker = new google.maps.Marker({
+                position: userPos,
+                map: map,
+                icon: { url: "http://maps.google.com/mapfiles/ms/icons/red-dot.png" },
+                title: "Tu ubicación actual",
+              });
             }
 
-            // Dibujar nueva ruta
-            rutaLayer = L.geoJSON(route, {
-              style: { color: 'blue', weight: 6, opacity: 0.7 }
-            }).addTo(map);
+            calcularRuta();
+          },
+          (err) => console.error("Error al obtener ubicación:", err),
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        );
+      }
+    }
 
-            // Tooltip con distancia
-            rutaLayer.bindTooltip("Distancia: " + distancia + " km", {
-              sticky: true
-            });
+    // Calcular y dibujar ruta
+    function calcularRuta() {
+      if (!userMarker || !fixedMarker) return;
 
-            // Ajustar vista a la ruta
-            map.fitBounds(rutaLayer.getBounds());
-          }
-        });
-    }, function(error) {
-      console.error("Error al obtener ubicación en tiempo real:", error);
-    }, {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 5000
-    });
-  }
-</script>
+      const start = userMarker.getPosition();
+      const end = fixedMarker.getPosition();
 
+      const request = {
+        origin: start,
+        destination: end,
+        travelMode: google.maps.TravelMode.DRIVING,
+      };
+
+      directionsService.route(request, (result, status) => {
+        if (status === "OK") {
+          directionsRenderer.setDirections(result);
+
+          const distancia = result.routes[0].legs[0].distance.text;
+          const info = new google.maps.InfoWindow({
+            content: `Distancia: ${distancia}`,
+            position: end
+          });
+          info.open(map);
+        } else {
+          console.error("Error al trazar ruta:", status);
+        }
+      });
+    }
+
+    window.onload = initMap;
+  </script>
 </body>
 </html>
